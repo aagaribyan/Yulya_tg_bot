@@ -155,3 +155,9 @@ cython_debug/
 *.ini
 *.docx
 *.doc
+
+*.ogg
+*.wav
+database/xls/*
+*.json
+test/*

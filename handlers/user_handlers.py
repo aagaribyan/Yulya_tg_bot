@@ -1,15 +1,16 @@
-'''
-from aiogram import Router
-from aiogram.filters import Command, CommandStart, Text
-from aiogram.types import Message, ContentType
-from lexicon.lexicon import LEXICON
-from aiogram import F
-# from keyboards.pagination_kb import create_pagination_keyboard
-# from keyboards.bookmarks_kb import create_bookmarks_keyboard, create_edit_keyboard
-# from services.file_handling import book
-# from database.database import user_db, user_dict_template
-# from filters.filters import IsDelBookmarkCallbackData, IsDigitCallbackData
+from copy import deepcopy
+import docx
 
+from aiogram import Router, F
+from aiogram.filters import Command, CommandStart
+from aiogram.types import Message
+
+from lexicon.lexicon import LEXICON
+from database.database import user_dict_template, users_db
+from services.utils import load_file_from_tg, save_dict_as_excel, translate_and_write_to_dict, translate_text, delete_file_from_disk
+
+
+# роутер aiogram
 router: Router = Router()
 
 
@@ -17,8 +18,16 @@ router: Router = Router()
 @router.message(CommandStart())
 async def process_start_command(message: Message):
     # добавление пользователя в user_db, если он новый
-    # if message.from_user.id not in user_db:
-    #    user_db[message.from_user.id] = deepcopy(user_dict_template)
+    if message.from_user.id not in users_db:
+        users_db[message.from_user.id] = deepcopy(user_dict_template)
+
+    '''
+    # пока закомментирую, мешает
+    file_name = 'database/xls/' + str(message.from_user.id) + '.xlsx'
+    if os.path.exists(file_name):
+        xls = pd.ExcelFile(file_name)
+        users_db[message.from_user.id]['words'] = xls.parse(xls.sheet_names[0])
+    '''
 
     await message.answer(text=LEXICON['/start'])
 
@@ -29,143 +38,88 @@ async def process_help_command(message: Message):
     await message.answer(text=LEXICON['/help'])
 
 
-# Хэндлер на получение голосового и аудио сообщения
-@router.message(content_types=[
-    ContentType.VOICE,
-    ContentType.AUDIO,
-    ContentType.DOCUMENT
-    ]
-)
-async def voice_message_handler(message: Message):
-    """
-    Обработчик на получение голосового и аудио сообщения
-    """
-    if message.content_type == ContentType.VOICE:
-        file_id = message.voice.file_id
-    elif message.content_type == ContentType.AUDIO:
-        file_id = message.audio.file_id
-    elif message.content_type == ContentType.DOCUMENT:
-        file_id = message.document.file_id
-    else:
-        await message.reply("Формат документа не поддерживается")
-        return
+# хендлер команды /list
+@router.message(Command(commands='list'))
+async def process_help_command(message: Message):
+    answer_text = ''
+    for key, val in users_db[message.from_user.id]['words'].items():
+        answer_text += str(key) + ': ' + str(val[0]) + '\n'
 
-    file = await bot.get_file(file_id)
-    file_path = file.file_path
-    file_on_disk = Path("", f"{file_id}.tmp")
-    await bot.download_file(file_path, destination=file_on_disk)
-    await message.reply("Аудио получено")
+    '''
+    answer_text += '\n'
+    for key, val in users_db[message.from_user.id]['frequency'].items():
+        answer_text += str(key) + ': ' + str(val) + '\n'
+    '''
 
-    text = stt.audio_to_text(file_on_disk)
-    if not text:
-        text = "Формат документа не поддерживается"
-    await message.answer(text)
-
-    os.remove(file_on_disk)  # Удаление временного файла
-'''
+    await message.answer(text=answer_text)
 
 
-'''
-# хендлер команды /bookmarks (показ закладок)
-@router.message(Command(commands='bookmarks'))
-async def process_bookmarks_command(message: Message):
-    if user_db[message.from_user.id]['bookmarks']:
-        await message.answer(text=LEXICON[message.text],
-                             reply_markup=create_bookmarks_keyboard(*user_db[message.from_user.id]['bookmarks']))
-    else:
-        await message.answer(text=LEXICON['no_bookmarks'])
+# хендлер команды /list2
+@router.message(Command(commands='list2'))
+async def process_help_command(message: Message):
+    answer_text = ''
+    sorted_freq = sorted(users_db[message.from_user.id]['words'].items(), key=lambda x:x[1])
+    for key, val in sorted_freq:
+        answer_text += str(key) + ': ' + str(val[1]) + '\n'
 
-# хендлер команды /beginning (переход в начало книги)
-@router.message(Command(commands='beginning'))
-async def process_beginnig_command(message: Message):
-    if message.from_user.id not in user_db:  # на всякий случай
-        user_db[message.from_user.id] = deepcopy(user_dict_template)
-
-    # переводим указатель этого пользователя в нашей "базе" на страницу 1
-    user_db[message.from_user.id]['page'] = 1
-
-    text = book[user_db[message.from_user.id]['page']]
-    pag_kb = create_pagination_keyboard('backward', f'1/{len(book)}', 'forward')
-
-    # выводим первую страницу и клавиатуру перехода по страницам
-    await message.answer(text=text, reply_markup=pag_kb)
-
-# хендлер команды /continue (продолжение чтения)
-@router.message(Command(commands='continue'))
-async def process_continue_command(message: Message):
-    text = book[user_db[message.from_user.id]['page']]
-    pag_kb = create_pagination_keyboard('backward', f'{user_db[message.from_user.id]["page"]}/{len(book)}', 'forward')
-
-    # отображаем страницу, на которой остановился пользователь и клавиатуру перехода по страницам
-    await message.answer(text=text, reply_markup=pag_kb)
-
-# хендлер перехода на следующую страницу
-@router.callback_query(Text(text='forward'))
-async def process_next_page(callback: CallbackQuery):
-    if user_db[callback.from_user.id]['page'] < len(book):
-        user_db[callback.from_user.id]['page'] += 1
-        text = book[user_db[callback.from_user.id]['page']]
-        pag_kb = create_pagination_keyboard('backward', 
-                                            f'{user_db[callback.from_user.id]["page"]}/{len(book)}', 'forward')
-
-        await callback.message.edit_text(text=text, reply_markup=pag_kb)
-
-    await callback.answer()
+    await message.answer(text=answer_text)
 
 
-# хендлер перехода на предыдущую страницу
-@router.callback_query(Text(text='backward'))
-async def process_previous_page(callback: CallbackQuery):
-    if user_db[callback.from_user.id]['page'] > 1:
-        user_db[callback.from_user.id]['page'] -= 1
-        text = book[user_db[callback.from_user.id]['page']]
-        pag_kb = create_pagination_keyboard('backward', 
-                                            f'{user_db[callback.from_user.id]["page"]}/{len(book)}','forward')
+# хендлер команды /save
+@router.message(Command(commands='save'))
+async def process_help_command(message: Message):
+    res = save_dict_as_excel(message.from_user.id)
+    await message.answer(text=res)
 
-        await callback.message.edit_text(text=text, reply_markup=pag_kb)
 
-    await callback.answer()
+# хендлер команды /delete
+@router.message(Command(commands='delete'))
+async def process_help_command(message: Message):
+    res = delete_file_from_disk(message.from_user.id)
+    await message.answer(text=res)
 
-# хендлер для инлайн-кнопки с номером текущей страницы (добавление закладки)
-@router.callback_query(lambda x: '/' in x.data and x.data.replace('/', '').isdigit())
-async def process_page_press(callback: CallbackQuery):
-    user_db[callback.from_user.id]['bookmarks'].add(user_db[callback.from_user.id]['page'])
-    await callback.answer('Страница добавлена в закладки')
 
-# хендлер выбора закладки из списка закладок
-@router.callback_query(IsDigitCallbackData())
-async def process_bookmark_press(callback: CallbackQuery):
-    user_db[callback.from_user.id]['page'] = int(callback.data)
-    text = book[int(callback.data)]
-    pag_kb = create_pagination_keyboard('backward', f'{int(callback.data)}/{len(book)}','forward')
+# Хэндлер на получение текстового сообщения
+@router.message(F.text)
+async def process_text_message(message: Message):
+    # общий перевод текста
+    translation = translate_text()
+    # отправка перевода пользователю
+    await message.answer(text=translation)
 
-    await callback.message.edit_text(text=text, reply_markup=pag_kb)
-    await callback.answer()
+    # добавление в словарь переводом отдельных слов
+    translate_and_write_to_dict(message.text, message.from_user.id)
 
-# хендлер нажатия кнопки "Редактировать" на списке закладок
-@router.callback_query(Text(text='edit_bookmarks'))
-async def process_edit_press(callback: CallbackQuery):
-    await callback.message.edit_text(text=LEXICON[callback.data],
-                                     reply_markup=create_edit_keyboard(*user_db[callback.from_user.id]['bookmarks']))
-    await callback.answer()
+    # запись в excel
+    save_dict_as_excel(message.from_user.id)
 
-# хендлер нажатия кнопки "отменить" под списком закладок
-@router.callback_query(Text(text='cancel'))
-async def process_cancel_press(callback: CallbackQuery):
-    await callback.message.edit_text(text=LEXICON['cancel_text'])
-    await callback.answer()
 
-# хендлер выбора закладки из списка редактирования (удаления) закладок
-@router.callback_query(IsDelBookmarkCallbackData())
-async def process_del_bookmark_press(callback: CallbackQuery):
-    user_db[callback.from_user.id]['bookmarks'].remove(int(callback.data[:-3]))
-    # если ещё остались закладки, отображаем клавиатуру редактирования с оставшимися закладками
-    if user_db[callback.from_user.id]['bookmarks']:
-        await callback.message.edit_text(text=LEXICON['/bookmarks'],
-                                         reply_markup=create_edit_keyboard(*user_db[callback.from_user.id]['bookmarks']))
-    # иначе отписываемся что закладок не осталось
-    else:
-        await callback.message.edit_text(text=LEXICON['no_bookmarks'])
+@router.message(F.document)
+async def process_document_message(message: Message):
 
-    await callback.answer()
-'''
+    file_id = message.document.file_id
+    file_on_disk = load_file_from_tg(file_id)
+
+    # переделать под возможность чтения и txt
+    # with open(file_on_disk, 'r', encoding='UTF-8') as file:
+    #   text = file.read()
+
+    # загрузка .doc файла
+    doc = docx.Document (file_on_disk) # ('file.doc')
+
+    # чтение текста из файла
+    text = ''
+    for paragraph in doc.paragraphs:
+        text += paragraph.text
+
+    # добавление в словарь переводом отдельных слов
+    translate_and_write_to_dict(text, message.from_user.id)
+
+    # запись в excel
+    save_dict_as_excel()
+
+    # выбор рандомного слова из excel
+    # df = pd.read_excel('database/xls/742654337.xlsx')
+    # words = df['translate'].tolist()
+    # random_word = random.choice(words)
+    # await message.answer(random_word)
