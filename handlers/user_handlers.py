@@ -7,11 +7,19 @@ from aiogram.types import Message
 
 from lexicon.lexicon import LEXICON
 from database.database import user_dict_template, users_db
-from services.utils import load_file_from_tg, save_dict_as_excel, translate_and_write_to_dict, translate_text, delete_file_from_disk
+from services.utils import load_file_from_tg, save_dict_as_excel, translate_and_write_to_dict, translate_all_text, delete_file_from_disk
+
+import google.cloud.translate_v2 as translate
+import os
 
 
 # роутер aiogram
 router: Router = Router()
+
+
+# подключение переводчика
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'C:/Users/armen/Documents/Git Repos/Yulya_tg_bot/western-dock-382910-f69f6855d1ba.json'
+translate_client = translate.Client()
 
 
 # хендлер команды /start
@@ -82,16 +90,24 @@ async def process_help_command(message: Message):
 # Хэндлер на получение текстового сообщения
 @router.message(F.text)
 async def process_text_message(message: Message):
+    target = users_db[message.from_user.id]['translate_to']
+    source = users_db[message.from_user.id]['source_lang']
+
     # общий перевод текста
-    translation = translate_text()
+    translation = translate_client.translate(message.text, source_language=source, target_language=target)
+
+    # общий перевод текста
+    #translation = translate_all_text(message.text, message.from_user.id)
+    #print(translation['translatedText'])
+
     # отправка перевода пользователю
-    await message.answer(text=translation)
+    await message.answer(text=translation['translatedText'])  # text=translation)
 
     # добавление в словарь переводом отдельных слов
-    translate_and_write_to_dict(message.text, message.from_user.id)
+    await translate_and_write_to_dict(message.text, message.from_user.id)
 
     # запись в excel
-    save_dict_as_excel(message.from_user.id)
+    await save_dict_as_excel(message.from_user.id)
 
 
 @router.message(F.document)
@@ -113,10 +129,10 @@ async def process_document_message(message: Message):
         text += paragraph.text
 
     # добавление в словарь переводом отдельных слов
-    translate_and_write_to_dict(text, message.from_user.id)
+    await translate_and_write_to_dict(text, message.from_user.id)
 
     # запись в excel
-    save_dict_as_excel()
+    await save_dict_as_excel()
 
     # выбор рандомного слова из excel
     # df = pd.read_excel('database/xls/742654337.xlsx')

@@ -18,17 +18,18 @@ bot: Bot = Bot(token=config.tg_bot.token, parse_mode='HTML')
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'C:/Users/armen/Documents/Git Repos/Yulya_tg_bot/western-dock-382910-f69f6855d1ba.json'
 translate_client = translate.Client()
 
-def translate_text(text, user_id):
+
+async def translate_all_text(text, user_id):
     target = users_db[user_id]['translate_to']
     source = users_db[user_id]['source_lang']
 
     # общий перевод текста
     translation = translate_client.translate(text, source_language=source, target_language=target)
-    return translation['translatedText']
+    return translation
 
 
 # перевод и запись в словарь
-def translate_and_write_to_dict(text, user_id):
+async def translate_and_write_to_dict(text, user_id):
     target = users_db[user_id]['translate_to']
     source = users_db[user_id]['source_lang']
 
@@ -47,8 +48,9 @@ def translate_and_write_to_dict(text, user_id):
 
     # return translation
 
+
 # получение файла из телеграма по id и сообщения
-def load_file_from_tg(file_id):
+async def load_file_from_tg(file_id):
     file = await bot.get_file(file_id)
 
     file_path = file.file_path
@@ -59,8 +61,9 @@ def load_file_from_tg(file_id):
 
     return file_on_disk
 
+
 # сохранения состояния словаря отдельного пользователя в excel файл
-def save_dict_as_excel(user_id):
+async def save_dict_as_excel(user_id):
     try:
         # переводим в формат pandas датафрейма
         df = pd.DataFrame(users_db[user_id]['words'], index=['translate', 'frequency']).T
@@ -77,7 +80,7 @@ def save_dict_as_excel(user_id):
 
 
 # удаление файла со словарем пользователя с диска
-def delete_file_from_disk(user_id):
+async def delete_file_from_disk(user_id):
     try:
         os.remove('database/xls/' + str(user_id) + '.xlsx')
         return LEXICON['file_delete_ok']
