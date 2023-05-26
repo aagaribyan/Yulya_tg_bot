@@ -73,7 +73,30 @@ async def process_help_command(message: Message):
     await message.answer(text=answer_text)
 
 
+# хендлер команды /rare
+@router.message(Command(commands='rare'))
+async def process_rare_command(message: Message):
+    answer_text = ''
+    sorted_freq = sorted(users_db[message.from_user.id]['words'].items(), key=lambda x: x[1], reverse=False)
+    for key, val in sorted_freq[:10]:
+        answer_text += str(key) + ': ' + str(val[1]) + '\n'
+
+    await message.answer(text=answer_text)
+
+
+# хендлер команды /frequent
+@router.message(Command(commands='frequent'))
+async def process_frequent_command(message: Message):
+    answer_text = ''
+    sorted_freq = sorted(users_db[message.from_user.id]['words'].items(), key=lambda x: x[1], reverse=True)
+    for key, val in sorted_freq[:10]:
+        answer_text += str(key) + ': ' + str(val[1]) + '\n'
+
+    await message.answer(text=answer_text)
+
+
 # хендлер команды /save
+# сохранение в excel файл (временная команда для тестов)
 @router.message(Command(commands='save'))
 async def process_help_command(message: Message):
     res = save_dict_as_excel(message.from_user.id)
@@ -81,6 +104,7 @@ async def process_help_command(message: Message):
 
 
 # хендлер команды /delete
+# команда для удаления файла
 @router.message(Command(commands='delete'))
 async def process_help_command(message: Message):
     res = delete_file_from_disk(message.from_user.id)
@@ -88,6 +112,8 @@ async def process_help_command(message: Message):
 
 
 # Хэндлер на получение текстового сообщения
+# разбивает текст на отдельные слова и сохраняет их перевод
+# (плюс в ответ отправляет перевод текста в целом если чат не групповой)
 @router.message(F.text)
 async def process_text_message(message: Message):
     target = users_db[message.from_user.id]['translate_to']
@@ -97,11 +123,13 @@ async def process_text_message(message: Message):
     translation = translate_client.translate(message.text, source_language=source, target_language=target)
 
     # общий перевод текста
-    #translation = translate_all_text(message.text, message.from_user.id)
-    #print(translation['translatedText'])
+    # translation = translate_all_text(message.text, message.from_user.id)
+    # print(translation['translatedText'])
 
-    # отправка перевода пользователю
-    await message.answer(text=translation['translatedText'])  # text=translation)
+    # проверка что чат не групповой
+    if message.chat.id == message.from_user.id:
+        # отправка перевода пользователю
+        await message.answer(text=translation['translatedText'])  # text=translation)
 
     # добавление в словарь переводом отдельных слов
     await translate_and_write_to_dict(message.text, message.from_user.id)
@@ -110,6 +138,8 @@ async def process_text_message(message: Message):
     await save_dict_as_excel(message.from_user.id)
 
 
+# хендлер на получение документа
+# (пока реализовано только для .doc файла и есть вариант для .txt, остальные нужно доделать)
 @router.message(F.document)
 async def process_document_message(message: Message):
 
