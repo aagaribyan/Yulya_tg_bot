@@ -48,7 +48,7 @@ async def process_help_command(message: Message):
 
 # хендлер команды /list
 @router.message(Command(commands='list'))
-async def process_help_command(message: Message):
+async def process_list_command(message: Message):
     answer_text = ''
     for key, val in users_db[message.from_user.id]['words'].items():
         answer_text += str(key) + ': ' + str(val[0]) + '\n'
@@ -64,7 +64,7 @@ async def process_help_command(message: Message):
 
 # хендлер команды /list2
 @router.message(Command(commands='list2'))
-async def process_help_command(message: Message):
+async def process_lsit2_command(message: Message):
     answer_text = ''
     sorted_freq = sorted(users_db[message.from_user.id]['words'].items(), key=lambda x:x[1])
     for key, val in sorted_freq:
@@ -98,7 +98,7 @@ async def process_frequent_command(message: Message):
 # хендлер команды /save
 # сохранение в excel файл (временная команда для тестов)
 @router.message(Command(commands='save'))
-async def process_help_command(message: Message):
+async def process_save_command(message: Message):
     res = save_dict_as_excel(message.from_user.id)
     await message.answer(text=res)
 
@@ -106,7 +106,7 @@ async def process_help_command(message: Message):
 # хендлер команды /delete
 # команда для удаления файла
 @router.message(Command(commands='delete'))
-async def process_help_command(message: Message):
+async def process_delete_command(message: Message):
     res = delete_file_from_disk(message.from_user.id)
     await message.answer(text=res)
 
@@ -126,7 +126,7 @@ async def process_text_message(message: Message):
     # translation = translate_all_text(message.text, message.from_user.id)
     # print(translation['translatedText'])
 
-    # проверка что чат не групповой
+    # проверка, что чат не групповой
     if message.chat.id == message.from_user.id:
         # отправка перевода пользователю
         await message.answer(text=translation['translatedText'])  # text=translation)
