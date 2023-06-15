@@ -1,8 +1,11 @@
 import pandas as pd
 import google.cloud.translate_v2 as translate
 import os
+from random import randint
 
 from aiogram import Bot
+from aiogram.types import InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config_data.config import Config, load_config
 from database.database import users_db
@@ -75,6 +78,7 @@ async def save_dict_as_excel(user_id):
         df.to_excel('database/xls/' + str(user_id) + '.xlsx')  # , index=[0])
 
         return LEXICON['dict_save_ok']
+
     except:
         return LEXICON['dict_save_error']
 
@@ -86,3 +90,39 @@ async def delete_file_from_disk(user_id):
         return LEXICON['file_delete_ok']
     except FileNotFoundError:
         return LEXICON['file_not_found']
+
+
+# фунция подбора 4-х случайных слов из словаря пользователя
+def choose_study_words(user_id):
+    words = users_db[user_id]  # dict со словами вида 'перевод': ['изначальное_слово', кол-во_появления]
+
+    # инициализация билдера
+    kb_builder: InlineKeyboardBuilder = InlineKeyboardBuilder()
+    # инициализация списка для кнопок
+    buttons: list[InlineKeyboardButton] = []
+
+    # подбор слов (пока сделаю равновероятный вариант)
+    chosen = []
+    i = 1
+    while len(buttons) < 4:
+        random_word = ...  # подбор рандомного элемента (ключа словаря), подзабыл какая для этого была ф-ция
+        if random_word not in chosen:
+            chosen.append(random_word)
+            buttons.append(InlineKeyboardButton(text=words[random_word][0],
+                                                callback_data='st_button'+str(i)))
+            i += 1
+
+    # последняя кнопка для прекращения обучения (выхода из соответствующего состояния)
+    buttons.append(InlineKeyboardButton(text=LEXICON['cancel'],
+                                        callback_data='_end_'))
+    # создание клавиатуры
+    kb_builder.row(*buttons, width=2)
+    markup = kb_builder.as_markup()
+
+    # выбор слова для перевода пользователем
+    ind = randint(0, 4)
+    selected_word = chosen[ind]
+    # запись правильного ответа в базу данному пользователю
+    users_db[user_id]['study_check'] = [words[selected_word][0], str(ind+1)]
+
+    return markup, selected_word
