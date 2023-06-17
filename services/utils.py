@@ -9,7 +9,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config_data.config import Config, load_config
 from database.database import users_db
-from lexicon.lexicon import LEXICON
+from lexicon.lexicon import LEXICON, LEXICON_LANGS, LEXICON_MAIN_LANGS
 
 # загрузка конфигураций в переменную config
 config: Config = load_config()
@@ -126,3 +126,53 @@ def choose_study_words(user_id):
     users_db[user_id]['study_check'] = [words[selected_word][0], str(ind+1)]
 
     return markup, selected_word
+
+
+# функция для изменения целевого языка пользователя user_id и удаления его словараля и файла
+def change_language(user_id, language):
+    try:
+        # в случае успеха заменяем язык
+        users_db[user_id]['translate_to'] = language
+        # удаляем файл этого пользователя
+        res = delete_file_from_disk(user_id)  # res не особо нужен, реакция на отсутствие файла не предполагается
+        # очищаем его словарь в базе
+        users_db[user_id]['words'] = {}
+
+        # возвращаем сообщение об успешном изменении целевого языка
+        return LEXICON['lang_change_ok']
+
+    except:  # на случай проблемы при удалении (уточнить исключение)
+        # возвращаем сообщение о возникновении ошибки (возможно стоит добавить текст ошибки)
+        return LEXICON['lang_change_fail']
+
+
+# функция для сборки клавиатуры с основными языками
+def get_lang_keyboard(now_lang, users_lang):
+    # добавить самому: английский, русский, испанский, французский, немецкий, португальский, итальянский, армянский
+    # подумать: китайский, японский, корейский, фарси, индийский
+
+    # инициализация билдера
+    kb_builder: InlineKeyboardBuilder = InlineKeyboardBuilder()
+    # инициализация списка для кнопок
+    buttons: list[InlineKeyboardButton] = [InlineKeyboardButton(text=LEXICON_LANGS[users_lang] + ' (текущий основной)',
+                                                                callback_data=users_lang)]
+
+    exception_langs = {now_lang, users_lang}
+    for lang in LEXICON_MAIN_LANGS:
+        if lang in exception_langs:
+            continue
+        else:
+            buttons.append(InlineKeyboardButton(text=LEXICON_LANGS[lang],
+                                                callback_data=lang))
+
+    # кнопка для выдачи полного списка языков
+    buttons.append(InlineKeyboardButton(text=LEXICON['all_langs'],
+                                        callback_data='_all_langs_'))
+    # последняя кнопка для отмены (выхода из состояния изменения целевого языка)
+    buttons.append(InlineKeyboardButton(text=LEXICON['cancel'],
+                                        callback_data='_cancel_'))
+    # создание клавиатуры
+    kb_builder.row(*buttons, width=1)
+    markup = kb_builder.as_markup()
+
+    return markup

@@ -9,10 +9,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import default_state
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from lexicon.lexicon import LEXICON
+from lexicon.lexicon import LEXICON, LEXICON_LANGS, LEXICON_MAIN_LANGS
 from database.database import user_dict_template, users_db
 from services.utils import (load_file_from_tg, save_dict_as_excel, translate_and_write_to_dict,
-                            translate_all_text, delete_file_from_disk, choose_study_words)
+                            translate_all_text, delete_file_from_disk, choose_study_words,
+                            change_language, get_lang_keyboard)
 
 import google.cloud.translate_v2 as translate
 import os
@@ -33,7 +34,7 @@ storage: MemoryStorage = MemoryStorage()
 # FSM класс для состояния обучения и состояния изменения целевого языка
 class FSMMain(StatesGroup):
     study = State()  # состояние обучения
-    # lang_change = State()  # состояние изменения языка (будет реализовано позже)
+    lang_change = State()  # состояние изменения языка (в будущем может быть разделен на 2)
 
 
 # хендлер команды /start
@@ -181,6 +182,7 @@ async def process_document_message(message: Message):
     # await message.answer(random_word)
 
 
+# Обучение:
 # хендлер команды /study (запуск состояния обучения)
 @router.message(Command(commands='study'), StateFilter(default_state))
 async def process_study_command(message: Message, state: FSMContext):
@@ -234,10 +236,77 @@ async def process_study_not_button(message: Message):
     await message.answer(text=LEXICON['study_not_button'])
 
 
+# Изменение целевого языка:
 # хендлер команды /change (создание клавиатуры со списком основных языков) (скорей всего стоит добавить FSM)
 @router.message(Command(commands='change'), StateFilter(default_state))
-async def process_change_command(message: Message):
-    #
-    #
-    #
-    await message.answer(text=LEXICON['/change'])
+async def process_change_command(message: Message, state: FSMContext):
+    # установка состояния изменения целевого языка
+    await state.set_state(FSMMain.lang_change)
+
+    # сборка клавиатуры с языками
+    markup = get_lang_keyboard(users_db[message.from_user.id]['translate_to'],
+                               users_db[message.from_user.id]['source_lang'])
+
+    await message.answer(text=LEXICON['/change'],
+                         reply_markup=markup)
+
+
+# хендлер реакции на кнопки изменения языка
+@router.callback_query(StateFilter(FSMMain.lang_change),
+                       Text(text=LEXICON_MAIN_LANGS + ['_all_langs_', '_cancel_']))  # проверить сработает ли так
+async def process_usual_language(callback: CallbackQuery, state: FSMContext):
+    if callback.data == '_cancel_':
+        await state.clear()
+        await callback.message.answer(text=LEXICON['cancel_lang'])
+
+    elif callback.data == '_all_langs_':
+        ans = 'Полный список кодов языков:'
+        for code, lang in LEXICON_LANGS.items():
+            ans += '\n' + code + ' - ' + lang
+
+        await callback.message.answer(text=ans)
+
+    else:
+        # изменяем язык
+        ans = change_language(callback.from_user.id, callback.data)
+        # уведомляем пользователя о результате
+        await callback.message.answer(text=ans)
+        # в любом случае выходим из состояния изменения целевого языка
+        await state.clear()
+
+
+# хендлер некорректного текста в состоянии изменения языка
+@router.message(StateFilter(FSMMain.lang_change),
+                F.text)
+async def process_unusual_language(message: Message, state: FSMContext):
+    # проверка, что указанный язык доступен
+    if message.text in LEXICON_LANGS:
+        new_lang = message.text
+        user_id = message.from_user.id
+        # проверяем не является ли указанный язык один из языков пользователя
+        if new_lang == users_db[user_id]['translate_to']:
+            await message.answer(text=LEXICON['lang_already'])
+        else:
+            if new_lang == users_db[user_id]['source_lang']:
+                # если был выбран основной язык пользователя, то меняем местами
+                users_db[user_id]['source_lang'] = users_db[user_id]['translate_to']
+
+            # изменяем язык
+            ans = change_language(user_id, new_lang)
+            # уведомляем пользователя о результате
+            await message.answer(text=ans)
+
+        # в любом случае выходим из состояния изменения целевого языка
+        await state.clear()
+
+    else:
+        # иначе выводится сообщение об ошибке
+        await message.answer(text=LEXICON['wrong_lang_code'])
+
+
+# хендлер команды /cancel в состоянии изменения целевого языка (выход из состояния обучения)
+@router.message(Command(commands='cancel'),
+                StateFilter(FSMMain.lang_change))
+async def process_cancel_lang_change_command(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(text=LEXICON['cancel_lang'])
